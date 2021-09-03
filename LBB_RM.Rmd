@@ -1,0 +1,181 @@
+---
+title: "Kuis Model Regresi"
+author: "Team Algoritma"
+date: "`r format = Sys.Date('%e, %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Kuis Model Regresi
+
+Kuis ini merupakan bagian dari proses penilaian *Algoritma Academy*. Selamat Anda sudah menyelesaikan materi *Regression Model*! Kami akan melakukan penilaian berupa kuis untuk menguji materi yang sudah dipelajari. Pengerjaan kuis diharapkan dapat dilakukan di dalam kelas, silahkan hubungi tim instruktur kami jika Anda melewatkan kesempatan untuk mengambilnya di kelas.
+
+## Eksplorasi Data
+
+```{r}
+
+library(tidyverse) # data wrangling -> persiapan data
+library(GGally) # cek korelasi secara visual
+library(MLmetrics) # cek performa model machine learning
+library(car) 
+library(lmtest)
+library(inspectdf) # exploratory data analysis
+library(caret)
+library(lime)
+```
+data yang akan digunakan adalah crime.csv
+```{r}
+crime <- read.csv("data_input/crime.csv")
+```
+
+```{r}
+# your code here
+crime %>% head()
+```
+
+```{r}
+str(crime)
+```
+```{r}
+ggcorr(data = crime, label = T, hjust = 1, label_size = 3, layout.exp = 3)
+
+```
+```{r}
+crime_clean<-crime %>% mutate(is_south=as.factor(is_south)) %>% select(-police_exp59)
+```
+
+
+```{r}
+set.seed(100)
+index <- sample(x = nrow(crime_clean), size = nrow(crime_clean)*0.8)
+
+crime_train<-crime_clean[index,]
+crime_test<-crime_clean[-index,]
+
+```
+
+## Membangun Linear Regression    
+
+```{r}
+# your code here
+model_crime_all<-lm(crime_rate ~ ., data = crime_train)
+model_crime_0<-lm(crime_rate ~ 1, data = crime_train)
+```
+
+membuat step wise regression
+```{r}
+#backward
+model_crime_bw<-step(object = model_crime_all, direction = "backward", trace = F)
+
+#forward
+model_crime_fw<-step(object = model_none,
+                     scope = list(lower = model_crime_0,
+                                  upper = model_crime_all),
+                     direction = "forward", 
+                     trace = F)
+
+```
+
+```{r}
+compare_performance(model_crime_bw,model_crime_fw, model_crime_all)
+```
+#didapati yang terbaik adalah model_crime_bw
+```{r}
+summary(model_crime_bw)
+```
+```{r}
+test_bw<-predict(model_crime_bw, crime_test)
+```
+
+```{r}
+MAE(test_bw, crime_test$crime_rate)
+MAPE(test_bw, crime_test$crime_rate)
+R2_Score(test_bw, crime_test$crime_rate)
+```
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 6,
+                     repeats = 3)
+
+crime_rf <- train(x = crime_train %>% select(-c(is_south, crime_rate)),
+                         y = crime_train$crime_rate,
+                     data = crime_train, 
+                     method = "rf", 
+                     trControl = ctrl)
+
+saveRDS(crime_rf, "crime_rf.RDS")
+```
+
+```{r}
+crime_rf<-readRDS("crime_rf.RDS")
+```
+
+```{r}
+test_rf0<-predict(crime_rf, crime_train)
+```
+
+```{r}
+MAE(test_rf0, crime_train$crime_rate)
+MAPE(test_rf0, crime_train$crime_rate)
+R2_Score(test_rf0, crime_train$crime_rate)
+```
+```{r}
+test_rf<-predict(crime_rf, crime_test)
+```
+
+```{r}
+MAE(test_rf, crime_test$crime_rate)
+MAPE(test_rf, crime_test$crime_rate)
+R2_Score(test_rf, crime_test$crime_rate)
+```
+```{r}
+crime_train_scale<-crime_train %>% select(-c(is_south, crime_rate)) %>% scale()
+
+crime_test_scale <- crime_test %>% select(-c(is_south, crime_rate)) %>% scale()
+```
+
+```{r}
+crime_train_scale<-as.data.frame(crime_train_scale)
+crime_train_scale$crime_rate<-crime_train$crime_rate
+crime_train_scale$is_south<-crime_train$is_south
+```
+
+```{r}
+crime_test_scale<-as.data.frame(crime_test_scale)
+crime_test_scale$crime_rate<-crime_test$crime_rate
+crime_test_scale$is_south<-crime_test$is_south
+```
+
+```{r}
+crime_bw_scale<-lm(formula = crime_rate ~ percent_m + mean_education + police_exp60 + 
+    m_per1000f + unemploy_m24 + unemploy_m39 + inequality + prob_prison, 
+    data = crime_train_scale)
+```
+
+```{r}
+compare_performance(crime_bw_scale, model_crime_bw)
+```
+```{r}
+test_bw_scale<-predict(crime_bw_scale, crime_test_scale)
+```
+
+```{r}
+MAE(test_bw_scale,crime_test_scale$crime_rate)
+MAPE(test_bw_scale, crime_test$crime_rate)
+R2_Score(test_bw_scale, crime_test$crime_rate)
+```
+Kesimpulan:
+1.setelah dilakukan step-wise modeling didapati bahwa model linear terbaik adalah model_bw dengan
+  nilai R squared 0.79. ketika di buat prediksi ke data tes didapati hasil yg kurang baik (MAPE 28%,
+  R-squared 0.05)
+2. Untuk perbandingan dibuat model random forest dimana pada data train didapati perbaikan hasil, 
+  tetapi hasil prediksi menunjukan nilai yang lebih buruk dibanding linear model.
+3. Untuk tuning model dilakukan scaling pada data predictor dan didapati hasil model yg nilainya 
+   persis sama dengan yang tanpa scaling. Tetapi pada prediksi ada perbaikan minor di nilai R square
+   yang meningkat menjadi 0.06.
+
+
